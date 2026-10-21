@@ -56,7 +56,7 @@ import {
 import './styles.css'
 import { calculateRisk } from './domain/risk'
 import { runBacktest } from './domain/backtest'
-import { createPaperAccount, executePaperTrade, unrealizedPnl, type PaperAccount } from './domain/paperTrading'
+import { executePaperTrade, loadPaperAccount, unrealizedPnl, type PaperAccount } from './domain/paperTrading'
 import { defaultStrategy, loadStrategies, saveStrategies, validateStrategy, type Strategy } from './domain/strategy'
 import { scanCandles, type ScanResult } from './domain/scanner'
 import { getCandles, getTicker } from './services/marketData'
@@ -235,7 +235,7 @@ function App() {
           </div>
           <div className="topbar-actions">
             <button className="search-trigger" onClick={() => document.getElementById('global-search')?.focus()}><Search size={16} /><span>Search markets, strategies...</span><kbd><Command size={11} /> K</kbd></button>
-            <span className="connection"><span className="status-dot" /> Market data live</span>
+            <span className="connection"><span className={`status-dot ${dataState === 'error' ? 'error-dot' : ''}`} /> {dataState === 'ready' ? 'Market data live' : dataState === 'stale' ? 'Market data stale' : dataState === 'loading' ? 'Connecting to market data' : 'Market data unavailable'}</span>
             <button className="icon-button" aria-label="Notifications" onClick={() => setActivePage('Alerts')}><Bell size={17} /><span className="notification-dot" /></button>
             <div className="top-avatar">AG</div>
           </div>
@@ -297,7 +297,7 @@ function Overview({
             <div><div className="panel-kicker"><span className="live-pulse" /> Price action</div><h2>{selectedMarket.symbol}</h2><div className="price-line"><strong>{displayedPrice}</strong><span className={displayedChange > 0 ? 'positive' : 'negative'}>{displayedChange > 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}{Math.abs(displayedChange).toFixed(2)}% <small>24h</small></span></div></div>
             <div className="chart-controls"><button className="select-button">{selectedMarket.name} <ChevronDown size={14} /></button><div className="segmented">{['1h', '4h', '1D', '1W'].map((value) => <button key={value} className={timeframe === value ? 'selected' : ''} onClick={() => setTimeframe(value)}>{value}</button>)}</div><button className="icon-button"><MoreHorizontal size={17} /></button></div>
           </div>
-          <div className="chart-legend"><span><i className="legend-line accent" /> BTC / USDT</span><span><i className="legend-line muted-line" /> EMA 20</span><span className="chart-source"><Database size={13} /> Sample feed · updated 2m ago</span></div>
+          <div className="chart-legend"><span><i className="legend-line accent" /> BTC / USDT</span><span><i className="legend-line muted-line" /> EMA 20</span><span className="chart-source"><Database size={13} /> Demonstration chart · {timeframe} · not live candle data</span></div>
           <div className="main-chart"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartSeries} margin={{ top: 16, right: 8, left: -20, bottom: 0 }}><defs><linearGradient id="priceFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9aa8ff" stopOpacity={0.24} /><stop offset="100%" stopColor="#9aa8ff" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="#222b38" vertical={false} /><XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#677487', fontSize: 11 }} /><YAxis domain={['dataMin - 800', 'dataMax + 500']} axisLine={false} tickLine={false} tick={{ fill: '#677487', fontSize: 11 }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} /><Tooltip content={<ChartTooltip />} /><Area type="monotone" dataKey="price" stroke="#9aa8ff" strokeWidth={2.4} fill="url(#priceFill)" activeDot={{ r: 4, fill: '#f1f5f9', stroke: '#9aa8ff', strokeWidth: 2 }} /></AreaChart></ResponsiveContainer></div>
           <div className="volume-chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={chartSeries} margin={{ top: 0, right: 8, left: -20, bottom: 0 }}><XAxis dataKey="time" hide /><YAxis hide /><Bar dataKey="volume" radius={[2, 2, 0, 0]}>{chartSeries.map((_, index) => <Cell key={index} fill={index % 3 === 0 ? '#536181' : '#303c55'} />)}</Bar></BarChart></ResponsiveContainer></div>
           <div className="chart-footer"><span>Volume</span><span>EMA 20 <strong>$66,414</strong></span><span>RSI 14 <strong>61.8</strong></span><span>MACD <strong className="positive">+182.4</strong></span></div>
@@ -401,7 +401,7 @@ function BacktestWorkspace({ notify }: { notify: (message: string) => void }) {
 }
 
 function PaperTradingWorkspace({ notify }: { notify: (message: string) => void }) {
-  const [account, setAccount] = useState<PaperAccount>(() => { try { return JSON.parse(localStorage.getItem('vectoris.paper') ?? '') as PaperAccount } catch { return createPaperAccount() } })
+  const [account, setAccount] = useState<PaperAccount>(() => loadPaperAccount(localStorage.getItem('vectoris.paper')))
   const [price, setPrice] = useState(67842)
   const [quantity, setQuantity] = useState(0.1)
   const [error, setError] = useState('')

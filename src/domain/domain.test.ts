@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ema, macd, relativeVolume, rsi, sma, volatility } from './indicators'
 import { runBacktest } from './backtest'
-import { createPaperAccount, executePaperTrade, unrealizedPnl } from './paperTrading'
+import { createPaperAccount, executePaperTrade, loadPaperAccount, unrealizedPnl } from './paperTrading'
 import { calculateRisk } from './risk'
 import { defaultStrategy, validateStrategy } from './strategy'
 import { validateCandles, type Candle } from './market'
@@ -131,5 +131,13 @@ describe('market data validation', () => {
       'Candle 0 has invalid OHLCV bounds.',
       'Candle 1 is not strictly after the previous candle.',
     ])
+    expect(validateCandles([
+      { time: 0, open: 10, high: 11, low: 9, close: 10, volume: 1 },
+      { time: 3_600_000 * 2, open: 10, high: 11, low: 9, close: 10, volume: 1 },
+    ], 3_600_000)).toContain('Candle 1 is not contiguous with the expected interval.')
+  })
+  it('recovers safely from invalid persisted paper state', () => {
+    const account = loadPaperAccount(JSON.stringify({ cash: -10, startingCash: 1000, realizedPnl: 0, positions: [], trades: [] }))
+    expect(account).toEqual(createPaperAccount())
   })
 })
