@@ -1,5 +1,5 @@
 import type { Candle } from './market'
-import { ema, macd, relativeVolume, rsi } from './indicators'
+import { ema, macd, relativeVolume, rsi, sma } from './indicators'
 import type { Strategy, StrategyCondition } from './strategy'
 
 type Series = { values: number[]; minimum: number; name: string }
@@ -21,11 +21,13 @@ function prepare(candles: Candle[], strategy: Strategy): Prepared {
   const errors: string[] = []
   const add = (key: string, values: number[], minimum: number, name: string) => series.set(key, { values, minimum, name })
   const requestedEmaPeriods = new Set<number>()
+  const requestedSmaPeriods = new Set<number>()
   const requestedRsiPeriods = new Set<number>()
   const requestedVolumePeriods = new Set<number>()
   for (const condition of [...strategy.entry.conditions, ...strategy.exit.conditions]) {
     const period = condition.period
     if (condition.indicator === 'ema') requestedEmaPeriods.add(period ?? 0)
+    if (condition.indicator === 'sma') requestedSmaPeriods.add(period ?? 0)
     if (condition.indicator === 'rsi') requestedRsiPeriods.add(period ?? 0)
     if (condition.indicator === 'volume') requestedVolumePeriods.add(period ?? 0)
     if (condition.indicator === 'ema' && typeof condition.value === 'string') {
@@ -37,6 +39,10 @@ function prepare(candles: Candle[], strategy: Strategy): Prepared {
   for (const period of requestedEmaPeriods) {
     if (period <= 0 || !Number.isInteger(period)) errors.push(`EMA period must be a positive integer (received ${period}).`)
     else add(`ema:${period}`, ema(closes, period), period, `EMA ${period}`)
+  }
+  for (const period of requestedSmaPeriods) {
+    if (period <= 0 || !Number.isInteger(period)) errors.push(`SMA period must be a positive integer (received ${period}).`)
+    else add(`sma:${period}`, sma(closes, period), period, `SMA ${period}`)
   }
   for (const period of requestedRsiPeriods) {
     if (period <= 0 || !Number.isInteger(period)) errors.push(`RSI period must be a positive integer (received ${period}).`)
@@ -51,7 +57,9 @@ function prepare(candles: Candle[], strategy: Strategy): Prepared {
   add('macd:signal', macdResult.signal, 26 + 9, 'MACD signal')
   for (const condition of [...strategy.entry.conditions, ...strategy.exit.conditions]) {
     if (condition.indicator === 'macd' && typeof condition.value === 'string' && condition.value !== 'signal') errors.push(`Unsupported MACD reference "${condition.value}" (use "signal").`)
-    if (condition.indicator !== 'macd' && typeof condition.value === 'string' && !/^ema\d+$/.test(condition.value)) errors.push(`Unsupported ${condition.indicator} reference "${condition.value}".`)
+    const numericValue = typeof condition.value === 'string' && condition.value.trim() !== '' && Number.isFinite(Number(condition.value))
+    if (condition.indicator !== 'macd' && condition.indicator !== 'ema' && typeof condition.value === 'string' && !numericValue) errors.push(`Unsupported ${condition.indicator} reference "${condition.value}".`)
+    if (condition.indicator === 'ema' && typeof condition.value === 'string' && !numericValue && !/^ema\d+$/.test(condition.value)) errors.push(`Unsupported EMA reference "${condition.value}".`)
   }
   return { series, errors }
 }
@@ -59,7 +67,7 @@ function prepare(candles: Candle[], strategy: Strategy): Prepared {
 function referenceValue(condition: StrategyCondition, index: number, prepared: Prepared): number | undefined {
   const primary = prepared.series.get(`${condition.indicator}:${condition.period ?? 14}`) ?? prepared.series.get(condition.indicator)
   if (!primary || index < primary.minimum || !finite(primary.values[index])) return undefined
-  if (typeof condition.value === 'number') return condition.value
+  if (typeof condition.value === 'number' || (typeof condition.value === 'string' && condition.value.trim() !== '' && Number.isFinite(Number(condition.value)))) return Number(condition.value)
   if (condition.indicator === 'macd' && condition.value === 'signal') {
     const signal = prepared.series.get('macd:signal')
     return signal && finite(signal.values[index]) ? signal.values[index] : undefined

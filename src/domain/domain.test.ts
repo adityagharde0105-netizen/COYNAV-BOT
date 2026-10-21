@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ema, macd, relativeVolume, rsi, volatility } from './indicators'
+import { ema, macd, relativeVolume, rsi, sma, volatility } from './indicators'
 import { runBacktest } from './backtest'
 import { createPaperAccount, executePaperTrade, unrealizedPnl } from './paperTrading'
 import { calculateRisk } from './risk'
@@ -14,6 +14,8 @@ const candles: Candle[] = Array.from({ length: 80 }, (_, index) => {
 
 describe('indicators', () => {
   it('calculates a seeded SMA/EMA window without look-ahead values', () => {
+    expect(sma([1, 2, 3, 4, 5], 3).slice(0, 2).every(Number.isNaN)).toBe(true)
+    expect(sma([1, 2, 3, 4, 5], 3)[2]).toBe(2)
     expect(ema([1, 2, 3, 4, 5], 3).slice(0, 2).every(Number.isNaN)).toBe(true)
     expect(ema([1, 2, 3, 4, 5], 3)[2]).toBe(2)
   })
@@ -73,6 +75,17 @@ describe('risk and strategy validation', () => {
     strategy.entry.conditions[0].value = 'futureClose'
     expect(validateStrategy(strategy).some((error) => error.includes('unsupported'))).toBe(true)
     expect(validateStrategyForBacktest(candles, strategy).some((error) => error.includes('Unsupported'))).toBe(true)
+  })
+  it('accepts numeric string thresholds from persisted builder state', () => {
+    const strategy = {
+      ...defaultStrategy(),
+      entry: { operator: 'AND' as const, conditions: [{ id: 'sma', indicator: 'sma' as const, period: 3, comparison: 'above' as const, value: '0' }] },
+      exit: { operator: 'AND' as const, conditions: [{ id: 'rsi', indicator: 'rsi' as const, period: 2, comparison: 'below' as const, value: '101' }] },
+    }
+    const evaluator = createStrategyEvaluator(candles, strategy)
+    expect(evaluator.errors).toHaveLength(0)
+    expect(evaluator.evaluate(79).entry).toBe(true)
+    expect(validateStrategy(strategy)).toHaveLength(0)
   })
 })
 
