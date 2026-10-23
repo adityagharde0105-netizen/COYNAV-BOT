@@ -5,6 +5,7 @@ const API = 'https://api.binance.com/api/v3'
 const CACHE_PREFIX = 'vectoris.market.'
 const CACHE_TTL = 60_000
 let lastRequestAt = 0
+const intervalMilliseconds: Record<string, number> = { '1m': 60_000, '3m': 180_000, '5m': 300_000, '15m': 900_000, '30m': 1_800_000, '1h': 3_600_000, '2h': 7_200_000, '4h': 14_400_000, '6h': 21_600_000, '8h': 28_800_000, '12h': 43_200_000, '1d': 86_400_000, '3d': 259_200_000, '1w': 604_800_000 }
 
 const waitForThrottle = async (signal?: AbortSignal) => {
   const wait = Math.max(0, 250 - (Date.now() - lastRequestAt))
@@ -67,8 +68,10 @@ export async function getCandles(symbol: string, interval = '4h', limit = 500, s
   const normalized = symbolToBinance(symbol)
   try {
     const result = await request<Array<[number, string, string, string, string, string, number]>>(`/klines?symbol=${normalized}&interval=${interval}&limit=${Math.min(limit, 1000)}`, signal)
-    const data = result.map(([time, open, high, low, close, volume]) => ({ time, open: Number(open), high: Number(high), low: Number(low), close: Number(close), volume: Number(volume) }))
-    const validationErrors = validateCandles(data)
+    const data = result
+      .filter(([, , , , , , closeTime]) => closeTime <= Date.now())
+      .map(([time, open, high, low, close, volume]) => ({ time, open: Number(open), high: Number(high), low: Number(low), close: Number(close), volume: Number(volume) }))
+    const validationErrors = validateCandles(data, intervalMilliseconds[interval])
     if (validationErrors.length) throw new Error(`Candle response failed validation: ${validationErrors[0]}`)
     saveCache(`candles.${normalized}.${interval}`, data)
     return { data, state: 'ready', source: 'binance-public', updatedAt: Date.now() }

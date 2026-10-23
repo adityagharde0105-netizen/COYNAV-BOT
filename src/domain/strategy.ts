@@ -1,5 +1,5 @@
 export type Comparison = 'above' | 'below' | 'crossesAbove' | 'crossesBelow'
-export type StrategyCondition = { id: string; indicator: 'ema' | 'rsi' | 'macd' | 'volume'; period?: number; comparison: Comparison; value: number | string }
+export type StrategyCondition = { id: string; indicator: 'sma' | 'ema' | 'rsi' | 'macd' | 'volume'; period?: number; comparison: Comparison; value: number | string }
 export type Strategy = {
   id: string
   name: string
@@ -34,7 +34,8 @@ export const validateStrategy = (strategy: Strategy): string[] => {
     if (condition.period !== undefined && (!Number.isInteger(condition.period) || condition.period <= 0)) errors.push(`${condition.indicator.toUpperCase()} period must be a positive integer.`)
     if (typeof condition.value === 'number' && !Number.isFinite(condition.value)) errors.push(`${condition.indicator.toUpperCase()} threshold must be finite.`)
     if (typeof condition.value === 'string') {
-      const validReference = condition.indicator === 'macd' ? condition.value === 'signal' : condition.indicator === 'ema' ? /^ema\d+$/.test(condition.value) : false
+      const numericValue = condition.value.trim() !== '' && Number.isFinite(Number(condition.value))
+      const validReference = numericValue || (condition.indicator === 'macd' ? condition.value === 'signal' : condition.indicator === 'ema' ? /^ema\d+$/.test(condition.value) : false)
       if (!validReference) errors.push(`${condition.indicator.toUpperCase()} condition reference "${condition.value}" is unsupported.`)
     }
   }

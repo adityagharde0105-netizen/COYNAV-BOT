@@ -6,6 +6,21 @@ export type PaperAccount = { cash: number; startingCash: number; realizedPnl: nu
 
 export const createPaperAccount = (cash = 100000): PaperAccount => ({ cash, startingCash: cash, realizedPnl: 0, positions: [], trades: [] })
 
+export function loadPaperAccount(raw: string | null): PaperAccount {
+  if (!raw) return createPaperAccount()
+  try {
+    const parsed = JSON.parse(raw) as Partial<PaperAccount>
+    const { cash, startingCash, realizedPnl, positions: rawPositions, trades: rawTrades } = parsed
+    if (typeof cash !== 'number' || !Number.isFinite(cash) || typeof startingCash !== 'number' || !Number.isFinite(startingCash) || typeof realizedPnl !== 'number' || !Number.isFinite(realizedPnl) || !Array.isArray(rawPositions) || !Array.isArray(rawTrades)) return createPaperAccount()
+    const positions = rawPositions.every((position) => typeof position.symbol === 'string' && Number.isFinite(position.quantity) && position.quantity > 0 && Number.isFinite(position.averagePrice) && position.averagePrice > 0 && Number.isFinite(position.openedAt))
+    const trades = rawTrades.every((trade) => typeof trade.id === 'string' && typeof trade.symbol === 'string' && (trade.side === 'buy' || trade.side === 'sell') && Number.isFinite(trade.quantity) && trade.quantity > 0 && Number.isFinite(trade.price) && trade.price > 0 && Number.isFinite(trade.fee) && trade.fee >= 0 && Number.isFinite(trade.timestamp))
+    if (!positions || !trades || cash < 0 || startingCash <= 0) return createPaperAccount()
+    return { cash, startingCash, realizedPnl, positions: rawPositions, trades: rawTrades }
+  } catch {
+    return createPaperAccount()
+  }
+}
+
 export function executePaperTrade(account: PaperAccount, symbol: string, side: 'buy' | 'sell', quantity: number, price: number, feeRate = 0.001, timestamp = Date.now()): PaperAccount {
   if (![quantity, price, feeRate].every(Number.isFinite) || quantity <= 0 || price <= 0 || feeRate < 0) throw new Error('Quantity, price, and fee rate must be valid non-negative numbers.')
   const fee = quantity * price * feeRate

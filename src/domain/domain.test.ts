@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { ema, macd, relativeVolume, rsi, volatility } from './indicators'
+import { ema, macd, relativeVolume, rsi, sma, volatility } from './indicators'
 import { runBacktest } from './backtest'
-import { createPaperAccount, executePaperTrade, unrealizedPnl } from './paperTrading'
+import { createPaperAccount, executePaperTrade, loadPaperAccount, unrealizedPnl } from './paperTrading'
 import { calculateRisk } from './risk'
 import { defaultStrategy, validateStrategy } from './strategy'
 import { validateCandles, type Candle } from './market'
 import { createStrategyEvaluator, validateStrategyForBacktest } from './strategyEvaluator'
+import { evaluateStrategySignal } from './signals'
 
 const candles: Candle[] = Array.from({ length: 80 }, (_, index) => {
   const close = 100 + index * 0.8 + Math.sin(index / 4) * 2
@@ -14,6 +15,8 @@ const candles: Candle[] = Array.from({ length: 80 }, (_, index) => {
 
 describe('indicators', () => {
   it('calculates a seeded SMA/EMA window without look-ahead values', () => {
+    expect(sma([1, 2, 3, 4, 5], 3).slice(0, 2).every(Number.isNaN)).toBe(true)
+    expect(sma([1, 2, 3, 4, 5], 3)[2]).toBe(2)
     expect(ema([1, 2, 3, 4, 5], 3).slice(0, 2).every(Number.isNaN)).toBe(true)
     expect(ema([1, 2, 3, 4, 5], 3)[2]).toBe(2)
   })
@@ -74,6 +77,17 @@ describe('risk and strategy validation', () => {
     expect(validateStrategy(strategy).some((error) => error.includes('unsupported'))).toBe(true)
     expect(validateStrategyForBacktest(candles, strategy).some((error) => error.includes('Unsupported'))).toBe(true)
   })
+  it('accepts numeric string thresholds from persisted builder state', () => {
+    const strategy = {
+      ...defaultStrategy(),
+      entry: { operator: 'AND' as const, conditions: [{ id: 'sma', indicator: 'sma' as const, period: 3, comparison: 'above' as const, value: '0' }] },
+      exit: { operator: 'AND' as const, conditions: [{ id: 'rsi', indicator: 'rsi' as const, period: 2, comparison: 'below' as const, value: '101' }] },
+    }
+    const evaluator = createStrategyEvaluator(candles, strategy)
+    expect(evaluator.errors).toHaveLength(0)
+    expect(evaluator.evaluate(79).entry).toBe(true)
+    expect(validateStrategy(strategy)).toHaveLength(0)
+  })
 })
 
 describe('backtest and paper accounting', () => {
@@ -98,6 +112,24 @@ describe('backtest and paper accounting', () => {
     expect(customResult.assumptions.strategyName).toBe('Always-on test')
     expect(customResult.totalTrades).not.toBe(starterResult.totalTrades)
   })
+  it('creates a deduplicable signal from the saved strategy and completed candle', () => {
+    const custom = {
+      ...defaultStrategy(),
+      id: 'saved-strategy',
+      name: 'Signal test',
+      version: 3,
+      entry: { operator: 'AND' as const, conditions: [{ id: 'entry', indicator: 'ema' as const, period: 2, comparison: 'above' as const, value: 0 }] },
+      exit: { operator: 'AND' as const, conditions: [{ id: 'exit', indicator: 'ema' as const, period: 2, comparison: 'below' as const, value: 0 }] },
+    }
+    const result = evaluateStrategySignal('BTC/USDT', '4h', candles, custom)
+    expect(result.errors).toHaveLength(0)
+    expect(result.signal).toMatchObject({
+      id: 'saved-strategy:3:BTC/USDT:4h:entry:284400000',
+      strategyName: 'Signal test',
+      source: 'binance-public',
+      price: candles[candles.length - 1].close,
+    })
+  })
   it('tracks paper cash, positions, fees, and unrealized pnl', () => {
     let account = createPaperAccount(1000)
     account = executePaperTrade(account, 'BTC/USDT', 'buy', 0.01, 100)
@@ -118,5 +150,13 @@ describe('market data validation', () => {
       'Candle 0 has invalid OHLCV bounds.',
       'Candle 1 is not strictly after the previous candle.',
     ])
+    expect(validateCandles([
+      { time: 0, open: 10, high: 11, low: 9, close: 10, volume: 1 },
+      { time: 3_600_000 * 2, open: 10, high: 11, low: 9, close: 10, volume: 1 },
+    ], 3_600_000)).toContain('Candle 1 is not contiguous with the expected interval.')
+  })
+  it('recovers safely from invalid persisted paper state', () => {
+    const account = loadPaperAccount(JSON.stringify({ cash: -10, startingCash: 1000, realizedPnl: 0, positions: [], trades: [] }))
+    expect(account).toEqual(createPaperAccount())
   })
 })
