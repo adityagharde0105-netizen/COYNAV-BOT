@@ -6,6 +6,7 @@ import { calculateRisk } from './risk'
 import { defaultStrategy, validateStrategy } from './strategy'
 import { validateCandles, type Candle } from './market'
 import { createStrategyEvaluator, validateStrategyForBacktest } from './strategyEvaluator'
+import { evaluateStrategySignal } from './signals'
 
 const candles: Candle[] = Array.from({ length: 80 }, (_, index) => {
   const close = 100 + index * 0.8 + Math.sin(index / 4) * 2
@@ -110,6 +111,24 @@ describe('backtest and paper accounting', () => {
     expect(customResult.totalTrades).toBeGreaterThan(0)
     expect(customResult.assumptions.strategyName).toBe('Always-on test')
     expect(customResult.totalTrades).not.toBe(starterResult.totalTrades)
+  })
+  it('creates a deduplicable signal from the saved strategy and completed candle', () => {
+    const custom = {
+      ...defaultStrategy(),
+      id: 'saved-strategy',
+      name: 'Signal test',
+      version: 3,
+      entry: { operator: 'AND' as const, conditions: [{ id: 'entry', indicator: 'ema' as const, period: 2, comparison: 'above' as const, value: 0 }] },
+      exit: { operator: 'AND' as const, conditions: [{ id: 'exit', indicator: 'ema' as const, period: 2, comparison: 'below' as const, value: 0 }] },
+    }
+    const result = evaluateStrategySignal('BTC/USDT', '4h', candles, custom)
+    expect(result.errors).toHaveLength(0)
+    expect(result.signal).toMatchObject({
+      id: 'saved-strategy:3:BTC/USDT:4h:entry:284400000',
+      strategyName: 'Signal test',
+      source: 'binance-public',
+      price: candles[candles.length - 1].close,
+    })
   })
   it('tracks paper cash, positions, fees, and unrealized pnl', () => {
     let account = createPaperAccount(1000)
